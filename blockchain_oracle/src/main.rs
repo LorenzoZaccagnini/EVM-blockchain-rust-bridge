@@ -14,9 +14,8 @@ async fn main() -> web3::contract::Result<()> {
     let web3_mumbai = web3::Web3::new(web3::transports::WebSocket::new(&mumbai_api_key).await?);
     let web3_gananche = web3::Web3::new(web3::transports::Http::new("http://localhost:8545")?);
 
-    //todo listen to events withdraw
     let filter_goerli = web3::types::FilterBuilder::default()
-        .address(vec!["0x518637C89E2cAF08aB52e717eD55B987E3790e46"
+        .address(vec!["0xf6f562525D0801C243177b71E74d99e34AaA2a4F"
             .parse()
             .unwrap()])
         .from_block(web3::types::BlockNumber::Latest)
@@ -32,16 +31,65 @@ async fn main() -> web3::contract::Result<()> {
         )
         .build();
 
+    let filter_goerli_deposit = web3::types::FilterBuilder::default()
+        .address(vec!["0xf6f562525D0801C243177b71E74d99e34AaA2a4F"
+            .parse()
+            .unwrap()])
+        .from_block(web3::types::BlockNumber::Latest)
+        .topics(
+            Some(vec![
+                "0x5548c837ab068cf56a2c2479df0882a4922fd203edb7517321831d95078c5f62"
+                    .parse()
+                    .unwrap(),
+            ]),
+            Some(vec![]),
+            None,
+            None,
+        )
+        .build();
+
     let sub_goerli = web3_goerli
         .eth_subscribe()
         .subscribe_logs(filter_goerli)
         .await?;
 
+    let sub_goerli_deposit = web3_goerli
+        .eth_subscribe()
+        .subscribe_logs(filter_goerli_deposit)
+        .await?;
+
+    sub_goerli_deposit
+        .for_each(|log| {
+            //convert hexadecimal to decimal
+            let topics2 = log.unwrap().topics[2];
+            //convert topics2 to string
+            let topics2_string = topics2.to_string();
+
+            let (useless, topics2_without_prefix) = topics2_string.split_at(2);
+            print!("Got 0x: {}", useless);
+            print!("Got topics2: {}", topics2_without_prefix);
+
+            //compare topic2
+            let tp2 = "00000000000000000000000000000000000000000000000000071afd498d0000";
+            if topics2_without_prefix == tp2 {
+                println!("same");
+            } else {
+                println!("different");
+            }
+            let decimal = u128::from_str_radix(&topics2_without_prefix, 16).unwrap_or_else(|e| {
+                panic!("Error parsing hex string: {}", e);
+            });
+
+            println!("Got topics2: {:?}", decimal);
+            future::ready(())
+        })
+        .await;
+
     //execute storage_number function when event happens
 
     let storage_contract = Contract::from_json(
         web3_gananche.eth(),
-        "0xba114f724115E2f82Ae1CEF88A171995e49918c6"
+        "0x9Da604E24B157aa0b581e58b5d3AD5719B86C843"
             .parse()
             .unwrap(),
         include_bytes!("storage.json"),
@@ -54,10 +102,11 @@ async fn main() -> web3::contract::Result<()> {
 
     let sub = sub_goerli
         .filter_map(|log| async {
-            println!("Got log transaction hash: {:?}", log);
+            println!("Got log WITHDRAW transaction hash: {:?}", log);
+
             if let Ok(log) = log {
                 let tx = storage_contract
-                    .call("store", (42_u32,), account, Options::default())
+                    .call("store", (27_u32,), account, Options::default())
                     .await;
                 println!("TxHash: {:?}", tx);
                 let number_stored: u64 = storage_contract
@@ -75,34 +124,4 @@ async fn main() -> web3::contract::Result<()> {
     sub.await;
 
     Ok(())
-}
-
-async fn storage_number(
-    web3: web3::Web3<web3::transports::Http>,
-    contract_address: &str,
-) -> web3::contract::Result<u64> {
-    println!("loading contract");
-
-    let storage_contract = Contract::from_json(
-        web3.eth(),
-        contract_address.parse().unwrap(),
-        include_bytes!("storage.json"),
-    )
-    .unwrap();
-
-    let accounts = web3.eth().accounts().await?;
-
-    let tx = storage_contract
-        .call("store", (42_u32,), accounts[0], Options::default())
-        .await?;
-    println!("TxHash: {}", tx);
-
-    let storage_number: u64 = storage_contract
-        .query("number", (), None, Options::default(), None)
-        .await
-        .unwrap();
-
-    println!("storage_number: {}", storage_number);
-
-    Ok(storage_number)
 }
