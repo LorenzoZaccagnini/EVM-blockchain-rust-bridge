@@ -1,3 +1,4 @@
+use ethnum::U256;
 use web3::contract::{Contract, Options};
 use web3::futures::{future, StreamExt};
 
@@ -7,14 +8,39 @@ extern crate dotenv;
 async fn main() -> web3::contract::Result<()> {
     dotenv::dotenv().ok();
     let goerli_api_key = std::env::var("API_GOERLI").expect("API_GOERLI must be set");
-    let mumbai_api_key = std::env::var("API_MUMBAI").expect("API_MUMBAI must be set");
-
     let web3_goerli = web3::Web3::new(web3::transports::WebSocket::new(&goerli_api_key).await?);
-
-    let web3_mumbai = web3::Web3::new(web3::transports::WebSocket::new(&mumbai_api_key).await?);
+    let web3_gananche_wss =
+        web3::Web3::new(web3::transports::WebSocket::new("ws://localhost:8545").await?);
     let web3_gananche = web3::Web3::new(web3::transports::Http::new("http://localhost:8545")?);
+    let event_signature = "0xcc16f5dbb4873280815c1ee09dbd06736cffcc184412cf7a71a0fdb75d397ca5";
 
-    let filter_goerli = web3::types::FilterBuilder::default()
+    let filter_ganache = web3::types::FilterBuilder::default()
+        .address(vec!["0xF523ac1d8b1aDcD0c97b3dF9C906B6E02Da562fB"
+            .parse()
+            .unwrap()])
+        .from_block(web3::types::BlockNumber::Latest)
+        .topics(
+            Some(vec![event_signature.parse().unwrap()]),
+            None,
+            None,
+            None,
+        )
+        .build();
+
+    let sub_ganache = web3_gananche_wss
+        .eth_subscribe()
+        .subscribe_logs(filter_ganache)
+        .await?;
+
+    let sub_ganache_logging = sub_ganache.for_each(|log| async move {
+        let amount = format!("{:?}", log.unwrap().topics[2]);
+        let amount_decoded = U256::from_str_radix(&amount[2..], 16).unwrap();
+        println!("Amount: {:?}", amount_decoded);
+    });
+
+    sub_ganache_logging.await;
+
+    /*     let filter_goerli = web3::types::FilterBuilder::default()
         .address(vec!["0xf6f562525D0801C243177b71E74d99e34AaA2a4F"
             .parse()
             .unwrap()])
@@ -121,7 +147,7 @@ async fn main() -> web3::contract::Result<()> {
         })
         .for_each(|_| async {});
 
-    sub.await;
+    sub.await; */
 
     Ok(())
 }
