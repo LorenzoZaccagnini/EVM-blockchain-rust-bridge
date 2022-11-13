@@ -9,23 +9,12 @@ async fn main() -> web3::contract::Result<()> {
     dotenv::dotenv().ok();
     let web3_source_chain_ws =
         web3::Web3::new(web3::transports::WebSocket::new("ws://localhost:8545").await?);
-    let web3_destination_chain_ws =
-        web3::Web3::new(web3::transports::WebSocket::new("ws://localhost:7545").await?);
     let web3_gananche = web3::Web3::new(web3::transports::Http::new("http://localhost:8545")?);
-    let event_signature = "0xcc16f5dbb4873280815c1ee09dbd06736cffcc184412cf7a71a0fdb75d397ca5";
+    let event_signature = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
     let web3_source_chain_contract = Contract::from_json(
         web3_source_chain_ws.eth(),
-        "0x9Da604E24B157aa0b581e58b5d3AD5719B86C843"
-            .parse()
-            .unwrap(),
-        include_bytes!("GBridgeToken.json"),
-    )
-    .unwrap();
-
-    let destination_chain_contract = Contract::from_json(
-        web3_destination_chain_ws.eth(),
-        "0x9Da604E24B157aa0b581e58b5d3AD5719B86C843"
+        "0xb0091dfad23CA4669ce69DB67D8A1db68e726321"
             .parse()
             .unwrap(),
         include_bytes!("GBridgeToken.json"),
@@ -33,7 +22,7 @@ async fn main() -> web3::contract::Result<()> {
     .unwrap();
 
     let filter_ganache = web3::types::FilterBuilder::default()
-        .address(vec!["0xF523ac1d8b1aDcD0c97b3dF9C906B6E02Da562fB"
+        .address(vec!["0xb0091dfad23CA4669ce69DB67D8A1db68e726321"
             .parse()
             .unwrap()])
         .from_block(web3::types::BlockNumber::Latest)
@@ -45,15 +34,20 @@ async fn main() -> web3::contract::Result<()> {
         )
         .build();
 
-    let sub_ganache = web3_gananche_wss
+    let sub_ganache = web3_source_chain_ws
         .eth_subscribe()
         .subscribe_logs(filter_ganache)
         .await?;
 
     let sub_ganache_logging = sub_ganache.for_each(|log| async move {
-        let amount = format!("{:?}", log.unwrap().topics[2]);
+        /*         let amount = format!("{:?}", log.unwrap().topics[2]);
         let amount_decoded = U256::from_str_radix(&amount[2..], 16).unwrap();
-        println!("Amount burned: {:?}", amount_decoded);
+        println!("Amount burned: {:?}", amount_decoded); */
+        print!("Log");
+        println!(
+            "Data: {}",
+            format!("0x{}", hex::encode(log.unwrap().data.0))
+        );
     });
 
     sub_ganache_logging.await;
