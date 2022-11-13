@@ -7,12 +7,30 @@ extern crate dotenv;
 #[tokio::main]
 async fn main() -> web3::contract::Result<()> {
     dotenv::dotenv().ok();
-    let goerli_api_key = std::env::var("API_GOERLI").expect("API_GOERLI must be set");
-    let web3_goerli = web3::Web3::new(web3::transports::WebSocket::new(&goerli_api_key).await?);
-    let web3_gananche_wss =
+    let web3_source_chain_ws =
         web3::Web3::new(web3::transports::WebSocket::new("ws://localhost:8545").await?);
+    let web3_destination_chain_ws =
+        web3::Web3::new(web3::transports::WebSocket::new("ws://localhost:7545").await?);
     let web3_gananche = web3::Web3::new(web3::transports::Http::new("http://localhost:8545")?);
     let event_signature = "0xcc16f5dbb4873280815c1ee09dbd06736cffcc184412cf7a71a0fdb75d397ca5";
+
+    let web3_source_chain_contract = Contract::from_json(
+        web3_source_chain_ws.eth(),
+        "0x9Da604E24B157aa0b581e58b5d3AD5719B86C843"
+            .parse()
+            .unwrap(),
+        include_bytes!("GBridgeToken.json"),
+    )
+    .unwrap();
+
+    let destination_chain_contract = Contract::from_json(
+        web3_destination_chain_ws.eth(),
+        "0x9Da604E24B157aa0b581e58b5d3AD5719B86C843"
+            .parse()
+            .unwrap(),
+        include_bytes!("GBridgeToken.json"),
+    )
+    .unwrap();
 
     let filter_ganache = web3::types::FilterBuilder::default()
         .address(vec!["0xF523ac1d8b1aDcD0c97b3dF9C906B6E02Da562fB"
@@ -35,7 +53,7 @@ async fn main() -> web3::contract::Result<()> {
     let sub_ganache_logging = sub_ganache.for_each(|log| async move {
         let amount = format!("{:?}", log.unwrap().topics[2]);
         let amount_decoded = U256::from_str_radix(&amount[2..], 16).unwrap();
-        println!("Amount: {:?}", amount_decoded);
+        println!("Amount burned: {:?}", amount_decoded);
     });
 
     sub_ganache_logging.await;
