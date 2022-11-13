@@ -1,6 +1,6 @@
 use ethnum::U256;
 use web3::contract::{Contract, Options};
-use web3::futures::StreamExt;
+use web3::futures::{future, StreamExt};
 
 #[tokio::main]
 async fn main() -> web3::contract::Result<()> {
@@ -43,6 +43,8 @@ async fn main() -> web3::contract::Result<()> {
 
     let sub_ganache_logging = sub_ganache.for_each(|log| async move {
         let address = format!("{:?}", log.clone().unwrap().topics[2]);
+        let address_from_raw = format!("{:?}", log.clone().unwrap().topics[1]);
+        let address_from_decoded = format!("0x{}", &address_from_raw[26..66]);
 
         match address.as_str() {
             "0x0000000000000000000000000000000000000000000000000000000000000000" => {
@@ -52,18 +54,11 @@ async fn main() -> web3::contract::Result<()> {
                 println!("Amount burned: {}", amount_decoded);
 
                 //mint tokens on the destination chain
+                mint_tokens(amount_decoded.as_u64(), &address_from_decoded).await;
 
                 /*                 let from_address_raw = format!("{:?}", log.clone().unwrap().topics[1]);
                 let from_address_decoded = format!("0x{}", &from_address_raw[26..66]); */
-
-                web3_destination_chain_contract
-                    .call(
-                        "mint",
-                        (account, amount_decoded.as_u64()),
-                        account,
-                        Options::default(),
-                    )
-                    .await;
+                println!("Burned from: {}", address_from_decoded);
             }
             _ => {
                 println!("Transferred");
@@ -74,4 +69,35 @@ async fn main() -> web3::contract::Result<()> {
     sub_ganache_logging.await;
 
     Ok(())
+}
+
+async fn mint_tokens(amount: u64, account_target: &str) {
+    let web3_destination_chain =
+        web3::Web3::new(web3::transports::Http::new("http://localhost:7545").unwrap());
+
+    let web3_destination_chain_contract = Contract::from_json(
+        web3_destination_chain.eth(),
+        "0x71a2f3AE2ed1aC64028218407d1797e89CDFC119"
+            .parse()
+            .unwrap(),
+        include_bytes!("GBridgeToken.json"),
+    )
+    .unwrap();
+
+    let ganache_accounts = web3_destination_chain.eth().accounts().await.unwrap();
+    let account = ganache_accounts[0];
+
+    //convert account_target to address
+    let account_target_address =
+        web3::types::Address::from_slice(&hex::decode(account_target.replace("0x", "")).unwrap());
+
+    web3_destination_chain_contract
+        .call(
+            "mint",
+            (account_target_address, amount),
+            account,
+            Options::default(),
+        )
+        .await
+        .unwrap();
 }
