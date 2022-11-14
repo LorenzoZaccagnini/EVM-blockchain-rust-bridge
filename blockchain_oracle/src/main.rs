@@ -1,29 +1,19 @@
 use ethnum::U256;
 use web3::contract::{Contract, Options};
-use web3::futures::{future, StreamExt};
+use web3::futures::StreamExt;
 
 #[tokio::main]
 async fn main() -> web3::contract::Result<()> {
     let web3_source_chain_ws =
         web3::Web3::new(web3::transports::WebSocket::new("ws://localhost:8545").await?);
-    let web3_destination_chain =
-        web3::Web3::new(web3::transports::Http::new("http://localhost:7545")?);
 
     let event_signature = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
-    let web3_destination_chain_contract = Contract::from_json(
-        web3_destination_chain.eth(),
-        "0x71a2f3AE2ed1aC64028218407d1797e89CDFC119"
-            .parse()
-            .unwrap(),
-        include_bytes!("GBridgeToken.json"),
-    )
-    .unwrap();
+    let source_sc_address = "0xB9d01d2E0FF04A2Ff2f0720Dd69e73F7671b55CE";
+    let destionation_sc_address = "0x4641B307794E29062906dc5fEd72152faEBB1C77";
 
     let filter_source_transfer = web3::types::FilterBuilder::default()
-        .address(vec!["0x71a2f3AE2ed1aC64028218407d1797e89CDFC119"
-            .parse()
-            .unwrap()])
+        .address(vec![source_sc_address.parse().unwrap()])
         .from_block(web3::types::BlockNumber::Latest)
         .topics(
             Some(vec![event_signature.parse().unwrap()]),
@@ -38,9 +28,6 @@ async fn main() -> web3::contract::Result<()> {
         .subscribe_logs(filter_source_transfer)
         .await?;
 
-    let ganache_accounts = web3_destination_chain.eth().accounts().await?;
-    let account = ganache_accounts[0];
-
     let sub_ganache_logging = sub_ganache.for_each(|log| async move {
         let address = format!("{:?}", log.clone().unwrap().topics[2]);
         let address_from_raw = format!("{:?}", log.clone().unwrap().topics[1]);
@@ -54,10 +41,13 @@ async fn main() -> web3::contract::Result<()> {
                 println!("Amount burned: {}", amount_decoded);
 
                 //mint tokens on the destination chain
-                mint_tokens(amount_decoded.as_u64(), &address_from_decoded).await;
+                mint_tokens(
+                    amount_decoded.as_u64(),
+                    &address_from_decoded,
+                    &destionation_sc_address,
+                )
+                .await;
 
-                /*                 let from_address_raw = format!("{:?}", log.clone().unwrap().topics[1]);
-                let from_address_decoded = format!("0x{}", &from_address_raw[26..66]); */
                 println!("Burned from: {}", address_from_decoded);
             }
             _ => {
@@ -71,15 +61,13 @@ async fn main() -> web3::contract::Result<()> {
     Ok(())
 }
 
-async fn mint_tokens(amount: u64, account_target: &str) {
+async fn mint_tokens(amount: u64, account_target: &str, smart_contract_address: &str) {
     let web3_destination_chain =
         web3::Web3::new(web3::transports::Http::new("http://localhost:7545").unwrap());
 
     let web3_destination_chain_contract = Contract::from_json(
         web3_destination_chain.eth(),
-        "0x71a2f3AE2ed1aC64028218407d1797e89CDFC119"
-            .parse()
-            .unwrap(),
+        smart_contract_address.parse().unwrap(),
         include_bytes!("GBridgeToken.json"),
     )
     .unwrap();
